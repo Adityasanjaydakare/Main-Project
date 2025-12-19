@@ -1,10 +1,6 @@
 pipeline {
     agent any
 
-    tools {
-        nodejs 'nodejs'
-    }
-
     environment {
         IMAGE_NAME = "enchanted-portfolio"
         DOCKERHUB_REPO = "adityadakare01/enchanted-portfolio"
@@ -14,7 +10,8 @@ pipeline {
 
         stage('Checkout SCM') {
             steps {
-                checkout scm
+                git branch: 'main',
+                    url: 'https://github.com/Adityasanjaydakare/Main-Project.git'
             }
         }
 
@@ -23,12 +20,6 @@ pipeline {
                 sh 'node -v'
                 sh 'npm -v'
                 sh 'docker --version'
-            }
-        }
-
-        stage('Checkout Code') {
-            steps {
-                echo "Code already checked out from SCM"
             }
         }
 
@@ -111,15 +102,6 @@ pipeline {
             steps {
                 archiveArtifacts artifacts: '**/coverage/**', allowEmptyArchive: true
             }
-        }
-    }
-
-    post {
-        success {
-            echo 'Pipeline completed successfully'
-        }
-        failure {
-            echo 'Pipeline failed'
         }
     }
 }
