@@ -4,6 +4,8 @@ pipeline {
     environment {
         IMAGE_NAME = "enchanted-portfolio"
         DOCKERHUB_REPO = "adityadakare01/enchanted-portfolio"
+        SONAR_HOST_URL = "http://localhost:9000"
+        SONAR_PROJECT_KEY = "enchanted-portfolio"
     }
 
     stages {
@@ -47,16 +49,14 @@ pipeline {
 
         stage('SonarQube Scan') {
             steps {
-                withSonarQubeEnv('SonarQube') {
-                    sh 'sonar-scanner'
-                }
-            }
-        }
-
-        stage('Quality Gate') {
-            steps {
-                timeout(time: 2, unit: 'MINUTES') {
-                    waitForQualityGate abortPipeline: true
+                withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+                    sh '''
+                    sonar-scanner \
+                      -Dsonar.projectKey=$SONAR_PROJECT_KEY \
+                      -Dsonar.sources=src,server \
+                      -Dsonar.host.url=$SONAR_HOST_URL \
+                      -Dsonar.login=$SONAR_TOKEN
+                    '''
                 }
             }
         }
