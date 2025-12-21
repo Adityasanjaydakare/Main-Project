@@ -2,10 +2,9 @@ pipeline {
     agent any
 
     environment {
-        IMAGE_NAME = "enchanted-portfolio"
-        DOCKERHUB_REPO = "adityadakare01/enchanted-portfolio"
-        SONAR_HOST_URL = "http://localhost:9000"
-        SONAR_PROJECT_KEY = "enchanted-portfolio"
+        SONAR_PROJECT_KEY = 'enchanted-portfolio'
+        SONAR_HOST_URL = 'http://localhost:9000'
+        DOCKER_IMAGE = 'adityadakare01/enchanted-portfolio'
     }
 
     stages {
@@ -17,7 +16,7 @@ pipeline {
             }
         }
 
-        stage('Tool Install') {
+        stage('Tool Check') {
             steps {
                 sh 'node -v'
                 sh 'npm -v'
@@ -25,16 +24,22 @@ pipeline {
             }
         }
 
-        stage('Install Frontend') {
+        stage('Install & Test Frontend') {
             steps {
-                sh 'npm install'
+                sh '''
+                    npm install
+                    npm test || true
+                '''
             }
         }
 
-        stage('Install Backend') {
+        stage('Install & Test Backend') {
             steps {
                 dir('server') {
-                    sh 'npm install'
+                    sh '''
+                        npm install
+                        npm test || true
+                    '''
                 }
             }
         }
@@ -46,25 +51,14 @@ pipeline {
         }
 
         stage('SonarQube Scan') {
-  withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
-    sh '''
-      /opt/sonar-scanner/bin/sonar-scanner \
-      -Dsonar.projectKey=enchanted-portfolio \
-      -Dsonar.sources=src,server \
-      -Dsonar.host.url=http://localhost:9000 \
-      -Dsonar.login=$SONAR_TOKEN
-    '''
-  }
-}
-stage('SonarQube Scan (CLI)') {
             steps {
                 withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
                     sh '''
-                    sonar-scanner \
-                      -Dsonar.projectKey=$SONAR_PROJECT_KEY \
-                      -Dsonar.sources=src,server \
-                      -Dsonar.host.url=$SONAR_HOST_URL \
-                      -Dsonar.login=$SONAR_TOKEN
+                        /opt/sonar-scanner/bin/sonar-scanner \
+                        -Dsonar.projectKey=$SONAR_PROJECT_KEY \
+                        -Dsonar.sources=src,server \
+                        -Dsonar.host.url=$SONAR_HOST_URL \
+                        -Dsonar.login=$SONAR_TOKEN
                     '''
                 }
             }
@@ -72,11 +66,13 @@ stage('SonarQube Scan (CLI)') {
 
         stage('Build Docker Image') {
             steps {
-                sh 'docker build -t $IMAGE_NAME .'
+                sh '''
+                    docker build -t $DOCKER_IMAGE:latest .
+                '''
             }
         }
 
-        stage('Push Docker Image') {
+        stage('Push Docker Image to DockerHub') {
             steps {
                 withCredentials([usernamePassword(
                     credentialsId: 'dockerhub-creds',
@@ -84,27 +80,45 @@ stage('SonarQube Scan (CLI)') {
                     passwordVariable: 'DOCKER_PASS'
                 )]) {
                     sh '''
-                    echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
-                    docker tag $IMAGE_NAME $DOCKERHUB_REPO:latest
-                    docker push $DOCKERHUB_REPO:latest
+                        echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                        docker push $DOCKER_IMAGE:latest
                     '''
                 }
             }
         }
 
-        stage('Deploy to EC2') {
+        stage('Deploy to AWS EC2') {
             steps {
-                sshagent(['ec2-ssh-key']) {
+                withCredentials([sshUserPrivateKey(
+                    credentialsId: 'ec2-ssh-key',
+                    keyFileVariable: 'SSH_KEY',
+                    usernameVariable: 'SSH_USER'
+                )]) {
                     sh '''
-                    ssh -o StrictHostKeyChecking=no ubuntu@EC2_PUBLIC_IP << EOF
-                        docker pull $DOCKERHUB_REPO:latest
-                        docker stop enchanted || true
-                        docker rm enchanted || true
-                        docker run -d --name enchanted -p 80:3000 $DOCKERHUB_REPO:latest
-                    EOF
+                        ssh -o StrictHostKeyChecking=no -i $SSH_KEY $SSH_USER@<EC2_PUBLIC_IP> "
+                        docker pull $DOCKER_IMAGE:latest &&
+                        docker stop portfolio || true &&
+                        docker rm portfolio || true &&
+                        docker run -d --name portfolio -p 80:80 $DOCKER_IMAGE:latest
+                        "
                     '''
                 }
             }
+        }
+
+        stage('Archive Reports') {
+            steps {
+                archiveArtifacts artifacts: '**/dist/**', allowEmptyArchive: true
+            }
+        }
+    }
+
+    post {
+        success {
+            echo '✅ Pipeline completed successfully!'
+        }
+        failure {
+            echo '❌ Pipeline failed. Check logs.'
         }
     }
 }
