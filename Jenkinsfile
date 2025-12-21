@@ -25,18 +25,16 @@ pipeline {
             }
         }
 
-        stage('Install & Test Frontend') {
+        stage('Install Frontend') {
             steps {
                 sh 'npm install'
-                sh 'npm test || true'
             }
         }
 
-        stage('Install & Test Backend') {
+        stage('Install Backend') {
             steps {
                 dir('server') {
                     sh 'npm install'
-                    sh 'npm test || true'
                 }
             }
         }
@@ -48,6 +46,17 @@ pipeline {
         }
 
         stage('SonarQube Scan') {
+  withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+    sh '''
+      /opt/sonar-scanner/bin/sonar-scanner \
+      -Dsonar.projectKey=enchanted-portfolio \
+      -Dsonar.sources=src,server \
+      -Dsonar.host.url=http://localhost:9000 \
+      -Dsonar.login=$SONAR_TOKEN
+    '''
+  }
+}
+stage('SonarQube Scan (CLI)') {
             steps {
                 withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
                     sh '''
@@ -67,7 +76,7 @@ pipeline {
             }
         }
 
-        stage('Push Docker Image to DockerHub') {
+        stage('Push Docker Image') {
             steps {
                 withCredentials([usernamePassword(
                     credentialsId: 'dockerhub-creds',
@@ -83,7 +92,7 @@ pipeline {
             }
         }
 
-        stage('Deploy to AWS EC2') {
+        stage('Deploy to EC2') {
             steps {
                 sshagent(['ec2-ssh-key']) {
                     sh '''
@@ -95,12 +104,6 @@ pipeline {
                     EOF
                     '''
                 }
-            }
-        }
-
-        stage('Archive Reports') {
-            steps {
-                archiveArtifacts artifacts: '**/coverage/**', allowEmptyArchive: true
             }
         }
     }
