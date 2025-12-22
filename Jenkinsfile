@@ -2,9 +2,11 @@ pipeline {
     agent any
 
     environment {
-        SONAR_PROJECT_KEY = 'enchanted-portfolio'
-        SONAR_HOST_URL = 'http://localhost:9000'
-        DOCKER_IMAGE = 'adityadakare01/enchanted-portfolio'
+        SONAR_SCANNER = "/opt/sonar-scanner/bin/sonar-scanner"
+        SONAR_HOST_URL = "http://localhost:9000"
+        SONAR_PROJECT_KEY = "enchanted-portfolio"
+
+        DOCKER_IMAGE = "adityadakare01/enchanted-portfolio"
     }
 
     stages {
@@ -27,8 +29,8 @@ pipeline {
         stage('Install & Test Frontend') {
             steps {
                 sh '''
-                    npm install
-                    npm test || true
+                  npm install
+                  npm test || true
                 '''
             }
         }
@@ -37,8 +39,8 @@ pipeline {
             steps {
                 dir('server') {
                     sh '''
-                        npm install
-                        npm test || true
+                      npm install
+                      npm test || true
                     '''
                 }
             }
@@ -53,35 +55,40 @@ pipeline {
         stage('SonarQube Scan') {
             steps {
                 withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
-                    sh '''
-                        /opt/sonar-scanner/bin/sonar-scanner \
-                        -Dsonar.projectKey=$SONAR_PROJECT_KEY \
-                        -Dsonar.sources=src,server \
-                        -Dsonar.host.url=$SONAR_HOST_URL \
-                        -Dsonar.login=$SONAR_TOKEN
-                    '''
+                    sh """
+                      ${SONAR_SCANNER} \
+                      -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+                      -Dsonar.sources=src,server \
+                      -Dsonar.host.url=${SONAR_HOST_URL} \
+                      -Dsonar.token=${SONAR_TOKEN}
+                    """
+                }
+            }
+        }
+
+        stage('Quality Gate') {
+            steps {
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
                 }
             }
         }
 
         stage('Build Docker Image') {
             steps {
-                sh '''
-                    docker build -t $DOCKER_IMAGE:latest .
-                '''
+                sh "docker build -t ${DOCKER_IMAGE}:latest ."
             }
         }
 
         stage('Push Docker Image to DockerHub') {
             steps {
-                withCredentials([usernamePassword(
-                    credentialsId: 'dockerhub-creds',
-                    usernameVariable: 'DOCKER_USER',
-                    passwordVariable: 'DOCKER_PASS'
-                )]) {
+                withCredentials([
+                    string(credentialsId: 'docker-user', variable: 'DOCKER_USER'),
+                    string(credentialsId: 'docker-pass', variable: 'DOCKER_PASS')
+                ]) {
                     sh '''
-                        echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
-                        docker push $DOCKER_IMAGE:latest
+                      echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                      docker push '"$DOCKER_IMAGE"':latest
                     '''
                 }
             }
@@ -89,20 +96,7 @@ pipeline {
 
         stage('Deploy to AWS EC2') {
             steps {
-                withCredentials([sshUserPrivateKey(
-                    credentialsId: 'ec2-ssh-key',
-                    keyFileVariable: 'SSH_KEY',
-                    usernameVariable: 'SSH_USER'
-                )]) {
-                    sh '''
-                        ssh -o StrictHostKeyChecking=no -i $SSH_KEY $SSH_USER@<EC2_PUBLIC_IP> "
-                        docker pull $DOCKER_IMAGE:latest &&
-                        docker stop portfolio || true &&
-                        docker rm portfolio || true &&
-                        docker run -d --name portfolio -p 80:80 $DOCKER_IMAGE:latest
-                        "
-                    '''
-                }
+                echo "🚀 Deployment step (add SSH / Docker run here)"
             }
         }
 
@@ -115,10 +109,10 @@ pipeline {
 
     post {
         success {
-            echo '✅ Pipeline completed successfully!'
+            echo "✅ Pipeline completed successfully"
         }
         failure {
-            echo '❌ Pipeline failed. Check logs.'
+            echo "❌ Pipeline failed. Check logs."
         }
     }
 }
