@@ -4,7 +4,6 @@ pipeline {
     environment {
         SONAR_HOST_URL = "http://localhost:9000"
         SONAR_PROJECT_KEY = "enchanted-portfolio"
-        SONAR_SCANNER = "/opt/sonar-scanner/bin/sonar-scanner"
         DOCKER_IMAGE = "adityadakare01/enchanted-portfolio"
     }
 
@@ -12,8 +11,7 @@ pipeline {
 
         stage('Checkout SCM') {
             steps {
-                git branch: 'main',
-                    url: 'https://github.com/Adityasanjaydakare/Main-Project.git'
+                checkout scm
             }
         }
 
@@ -55,7 +53,7 @@ pipeline {
             steps {
                 withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
                     sh '''
-                      $SONAR_SCANNER \
+                      /opt/sonar-scanner/bin/sonar-scanner \
                       -Dsonar.projectKey=$SONAR_PROJECT_KEY \
                       -Dsonar.sources=src,server \
                       -Dsonar.host.url=$SONAR_HOST_URL \
@@ -70,12 +68,10 @@ pipeline {
                 withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
                     sh '''
                       echo "Waiting for SonarQube Quality Gate..."
-
                       sleep 15
-
                       STATUS=$(curl -s -u $SONAR_TOKEN: \
                         "$SONAR_HOST_URL/api/qualitygates/project_status?projectKey=$SONAR_PROJECT_KEY" \
-                        | jq -r '.projectStatus.status')
+                        | jq -r .projectStatus.status)
 
                       echo "Quality Gate Status: $STATUS"
 
@@ -92,7 +88,9 @@ pipeline {
 
         stage('Build Docker Image') {
             steps {
-                sh "docker build -t ${DOCKER_IMAGE}:latest ."
+                sh '''
+                  docker build -t $DOCKER_IMAGE:latest .
+                '''
             }
         }
 
@@ -104,7 +102,7 @@ pipeline {
                 ]) {
                     sh '''
                       echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
-                      docker push '"$DOCKER_IMAGE"':latest
+                      docker push $DOCKER_IMAGE:latest
                     '''
                 }
             }
@@ -113,10 +111,10 @@ pipeline {
 
     post {
         success {
-            echo "✅ Pipeline completed successfully"
+            echo '✅ PIPELINE COMPLETED SUCCESSFULLY'
         }
         failure {
-            echo "❌ Pipeline failed. Quality Gate or build error."
+            echo '❌ PIPELINE FAILED'
         }
     }
 }
