@@ -2,10 +2,9 @@ pipeline {
     agent any
 
     environment {
-        SONAR_SCANNER = "/opt/sonar-scanner/bin/sonar-scanner"
         SONAR_HOST_URL = "http://localhost:9000"
         SONAR_PROJECT_KEY = "enchanted-portfolio"
-
+        SONAR_SCANNER = "/opt/sonar-scanner/bin/sonar-scanner"
         DOCKER_IMAGE = "adityadakare01/enchanted-portfolio"
     }
 
@@ -55,21 +54,38 @@ pipeline {
         stage('SonarQube Scan') {
             steps {
                 withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
-                    sh """
-                      ${SONAR_SCANNER} \
-                      -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+                    sh '''
+                      $SONAR_SCANNER \
+                      -Dsonar.projectKey=$SONAR_PROJECT_KEY \
                       -Dsonar.sources=src,server \
-                      -Dsonar.host.url=${SONAR_HOST_URL} \
-                      -Dsonar.token=${SONAR_TOKEN}
-                    """
+                      -Dsonar.host.url=$SONAR_HOST_URL \
+                      -Dsonar.token=$SONAR_TOKEN
+                    '''
                 }
             }
         }
 
-        stage('Quality Gate') {
+        stage('Quality Gate (Manual Check)') {
             steps {
-                timeout(time: 5, unit: 'MINUTES') {
-                    waitForQualityGate abortPipeline: true
+                withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+                    sh '''
+                      echo "Waiting for SonarQube Quality Gate..."
+
+                      sleep 15
+
+                      STATUS=$(curl -s -u $SONAR_TOKEN: \
+                        "$SONAR_HOST_URL/api/qualitygates/project_status?projectKey=$SONAR_PROJECT_KEY" \
+                        | jq -r '.projectStatus.status')
+
+                      echo "Quality Gate Status: $STATUS"
+
+                      if [ "$STATUS" != "OK" ]; then
+                        echo "❌ Quality Gate Failed"
+                        exit 1
+                      fi
+
+                      echo "✅ Quality Gate Passed"
+                    '''
                 }
             }
         }
@@ -93,18 +109,6 @@ pipeline {
                 }
             }
         }
-
-        stage('Deploy to AWS EC2') {
-            steps {
-                echo "🚀 Deployment step (add SSH / Docker run here)"
-            }
-        }
-
-        stage('Archive Reports') {
-            steps {
-                archiveArtifacts artifacts: '**/dist/**', allowEmptyArchive: true
-            }
-        }
     }
 
     post {
@@ -112,7 +116,7 @@ pipeline {
             echo "✅ Pipeline completed successfully"
         }
         failure {
-            echo "❌ Pipeline failed. Check logs."
+            echo "❌ Pipeline failed. Quality Gate or build error."
         }
     }
 }
